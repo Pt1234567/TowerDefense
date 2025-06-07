@@ -4,35 +4,61 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.*
+import java.time.LocalTime
+import java.util.LinkedList
+import java.util.PriorityQueue
+import java.util.Queue
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,7 +77,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
 @Composable
 fun TowerDefenseGame(viewModel: GameViewModel = viewModel()) {
     // Step 1: Collect game state
@@ -246,13 +271,15 @@ fun GameGrid(
         // Step 1: Draw grid
         for (row in 0 until 10) {
             for (col in 0 until 10) {
+
                 val isPath = path.indexOf(Pair(row, col)) != -1 &&
                         path.indexOf(Pair(row, col)) <= (path.size * pathAnimationProgress).toInt()
+
                 val tower = towers.find { it.position == Pair(row, col) }
                 val hasTower = tower != null
                 drawRect(
                     color = when {
-                        isPath -> Color(0xFF42A5F5)
+
                         hasTower && tower!!.skillTree.isFullyUpgraded -> Color(0xFFFF9800) // Step 5
                         hasTower -> Color(0xFFFF5722)
                         else -> Color(0xFF616161)
@@ -273,23 +300,25 @@ fun GameGrid(
         // Step 4: HP bars
         // Step 6: Scaled HP
         Log.d("GameGrid", "Rendering ${enemies.size} enemies")
-        for (enemy in enemies) {
+        enemies.forEachIndexed { index, enemy ->
             val (x, y) = enemy.position
-            Log.d("GameGrid", "Drawing enemy at ($x, $y)")
+//            Log.d("GameGrid", "Drawing enemy ${enemy.id} at ($x, $y)")
             drawCircle(
                 color = Color.Red,
                 radius = tileSize / 4,
-                center = Offset(x * tileSize + tileSize / 2, y * tileSize + tileSize / 2)
+                center = Offset(y * tileSize + tileSize / 2, x * tileSize + tileSize / 2)
             )
+            val xc=x * tileSize + tileSize / 2
+            val yc=y * tileSize + tileSize / 2
             val hpRatio = enemy.hp.toFloat() / (50 + (wave - 1) * 10)
             drawRect(
                 color = Color.Green,
-                topLeft = Offset(x * tileSize + tileSize / 4, y * tileSize + tileSize / 8 - 10),
+                topLeft = Offset(y * tileSize + tileSize / 4,x * tileSize + tileSize / 8 - 10),
                 size = Size(tileSize / 2 * hpRatio, 5f)
             )
             drawRect(
                 color = Color.Black,
-                topLeft = Offset(x * tileSize + tileSize / 4, y * tileSize + tileSize / 8 - 10),
+                topLeft = Offset(y * tileSize + tileSize / 4, x * tileSize + tileSize / 8 - 10),
                 size = Size(tileSize / 2, 5f),
                 style = Stroke(width = 1f)
             )
@@ -304,8 +333,8 @@ fun GameGrid(
                     (line.towerPos.first + 0.5f) * tileSize
                 ),
                 end = Offset(
-                    (line.enemyPos.first + 0.5f) * tileSize,
-                    (line.enemyPos.second + 0.5f) * tileSize
+                    (line.enemyPos.second + 0.5f) * tileSize,
+                    (line.enemyPos.first + 0.5f) * tileSize
                 ),
                 strokeWidth = 4f,
                 alpha = line.alpha
@@ -390,8 +419,10 @@ fun UpgradeDialog(
                 Text("Close")
             }
         },
-        containerColor = Color(0xFF1E1E1E)
-    )
+        containerColor = Color(0xFF1E1E1E),
+
+
+        )
 }
 
 @Composable
@@ -423,32 +454,47 @@ fun ResultScreen(isVictory: Boolean, onReplay: () -> Unit) {
     }
 }
 
+
+
 class GameViewModel : ViewModel() {
     private val _gameState = MutableStateFlow(GameState())
     val gameState: StateFlow<GameState> = _gameState
 
+    private var enemyIdCounter = 0
+
     init {
-        // Step 1: Initialize game
         initializeGame()
     }
 
     fun startWave() {
-        // Step 3: Start wave
-        // Step 6: Wave transition
         Log.d("GameViewModel", "Starting wave ${_gameState.value.wave}")
-        _gameState.update { it.copy(showWaveTransition = true) }
+        val currentState = _gameState.value
+
+        val newPath = computePathBFS(currentState.grid)
+        if (newPath.firstOrNull() != Pair(0, 0) || newPath.lastOrNull() != Pair(9, 9)) {
+            _gameState.update { it.copy(showInvalidPathMessage = true) }
+            Log.e("GameViewModel", "Cannot start wave: No valid path from (0,0) to (9,9)")
+            return
+        }
+
+        _gameState.update {
+            it.copy(
+                path = newPath,
+                showWaveTransition = true,
+                isInPreparationPhase = false
+            )
+        }
         viewModelScope.launch {
             delay(1500)
             _gameState.update { it.copy(showWaveTransition = false, isWaveActive = true) }
             Log.d("GameViewModel", "Wave transition ended, isWaveActive: true")
-            // Step 6: Scale enemies
             val wave = _gameState.value.wave
             val baseHP = 50 + (wave - 1) * 10
             val baseSpeed = 1f + (wave - 1) * 0.1f
             val waveEnemies = listOf(
-                Enemy(hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f)),
-                Enemy(hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f)),
-                Enemy(hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f))
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f)),
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f)),
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f))
             )
             waveEnemies.forEachIndexed { index, enemy ->
                 Log.d("GameViewModel", "Spawning enemy ${index + 1} at position ${enemy.position}")
@@ -459,7 +505,6 @@ class GameViewModel : ViewModel() {
             }
             Log.d("GameViewModel", "Finished spawning ${waveEnemies.size} enemies")
 
-            // Game loop
             while (_gameState.value.isWaveActive) {
                 updateGame()
                 delay(100)
@@ -469,24 +514,30 @@ class GameViewModel : ViewModel() {
     }
 
     fun placeTower(row: Int, col: Int) {
-        // Step 2: Place tower
+        Log.d("TOWER_POSITION", "placeTower: $row, $col")
         val currentState = _gameState.value
         if (currentState.gold >= 50 && !currentState.path.contains(Pair(row, col)) &&
-            !currentState.towers.any { it.position == Pair(row, col) }) {
+            !currentState.towers.any { it.position == Pair(row, col) } && currentState.isInPreparationPhase) {
+            val newGrid = currentState.grid.map { it.copyOf() }.toTypedArray()
+            newGrid[row][col] = Tile(isObstacle = true)
+
             _gameState.update { state ->
                 state.copy(
                     gold = state.gold - 50,
+                    grid = newGrid,
                     towers = state.towers + Tower(
                         position = Pair(row, col),
                         skillTree = createSkillTree()
                     )
                 )
             }
+            Log.d("GameViewModel", "Tower placed at ($row, $col), grid updated, path unchanged")
+        } else {
+            Log.d("GameViewModel", "Cannot place tower at ($row, $col): Invalid placement")
         }
     }
 
     fun upgradeTower(tower: Tower, upgrade: Upgrade) {
-        // Step 5: Apply upgrade
         val currentState = _gameState.value
         if (currentState.gold >= upgrade.cost && !tower.skillTree.isUpgradeUnlocked(upgrade) &&
             upgrade.dependencies.all { tower.skillTree.isUpgradeUnlocked(it) }) {
@@ -517,59 +568,86 @@ class GameViewModel : ViewModel() {
     }
 
     fun resetGame() {
-        // Step 6: Reset game
         initializeGame()
     }
 
-    private fun updateGame() {
-        // Step 3: Enemy movement
-        // Step 4: Attacks
-        // Step 6: End conditions
+    private suspend fun updateGame() {
         _gameState.update { state ->
+            // Move enemies
             val updatedEnemies = state.enemies.mapNotNull { enemy ->
                 val (newX, newY, isAlive) = moveEnemy(enemy, state.path)
-                Log.d("GameViewModel", "Moving enemy from ${enemy.position} to ($newX, $newY), isAlive: $isAlive")
+                Log.d("GameViewModel", "Moving enemy${enemy.id} from ${enemy.position} to ($newX, $newY), isAlive: $isAlive")
                 if (isAlive) {
                     enemy.copy(position = Pair(newX, newY))
                 } else {
                     null
                 }
             }
+
             val newBaseHP = if (updatedEnemies.size < state.enemies.size) {
                 state.baseHP - (state.enemies.size - updatedEnemies.size)
             } else {
                 state.baseHP
             }
 
-            val newEnemies = updatedEnemies.toMutableList()
+            val newEnemies = updatedEnemies.toList()
             val attackLines = mutableListOf<AttackLine>()
-            val towers = state.towers.map { tower ->
-                val (updatedTower, targetEnemy, damageDealt) = updateTower(tower, newEnemies, state.path)
+
+            // Process towers asynchronously
+            val towerResults = coroutineScope {
+                state.towers.map { tower ->
+                    async {
+                        Log.d("KILL_A", "updateGame: ${tower.position},${newEnemies}")
+                        updateTower(tower, newEnemies, state.path)
+                    }
+                }.map { it.await() }
+            }
+
+            // Aggregate damage per enemy
+            val damageMap = mutableMapOf<Int, Int>() // enemy.id -> total damage
+            val attackingTowers = mutableMapOf<Int, List<Pair<Pair<Int, Int>, Int>>>() // enemy.id -> List<(tower.position, damage)>
+            towerResults.forEach { (updatedTower, targetEnemy, damageDealt) ->
                 if (damageDealt > 0 && targetEnemy != null) {
+                    damageMap[targetEnemy.id] = (damageMap[targetEnemy.id] ?: 0) + damageDealt
+                    attackingTowers[targetEnemy.id] = (attackingTowers[targetEnemy.id] ?: emptyList()) + Pair(updatedTower.position, damageDealt)
                     attackLines.add(
                         AttackLine(
-                            towerPos = tower.position,
+                            towerPos = updatedTower.position,
                             enemyPos = targetEnemy.position,
                             alpha = 1f
                         )
                     )
-                    val enemyIndex = newEnemies.indexOfFirst { it == targetEnemy }
-                    if (enemyIndex != -1) {
-                        val enemy = newEnemies[enemyIndex]
-                        val newHP = enemy.hp - damageDealt
-                        if (newHP <= 0) {
-                            newEnemies.removeAt(enemyIndex)
-                        } else {
-                            newEnemies[enemyIndex] = enemy.copy(hp = newHP)
-                        }
-                    }
                 }
-                updatedTower
             }
 
-            val kills = state.enemies.size - newEnemies.size - (state.baseHP - newBaseHP)
+            // Log simultaneous attacks
+            damageMap.forEach { (enemyId, totalDamage) ->
+                val towers = attackingTowers[enemyId]?.joinToString { "Tower at ${it.first} (damage: ${it.second})" } ?: "None"
+                Log.d("GameViewModel", "Enemy $enemyId takes $totalDamage damage from: $towers")
+            }
+
+            // Apply aggregated damage to enemies
+            val finalEnemies = newEnemies.mapNotNull { enemy ->
+                val totalDamage = damageMap[enemy.id] ?: 0
+                if (totalDamage > 0) {
+                    val newHP = enemy.hp - totalDamage
+                    if (newHP <= 0) {
+                        Log.d("GameViewModel", "Enemy ${enemy.id} killed at ${enemy.position}")
+                        null
+                    } else {
+                        enemy.copy(hp = newHP)
+                    }
+                } else {
+                    enemy
+                }
+            }
+
+            // Collect updated towers
+            val towers = towerResults.map { it.first }
+
+            val kills = state.enemies.size - finalEnemies.size - (state.baseHP - newBaseHP)
             val newGold = state.gold + kills * 10
-            val isWaveActive = newEnemies.isNotEmpty()
+            val isWaveActive = finalEnemies.isNotEmpty()
             val newWave = if (!isWaveActive && state.wave < 10) state.wave + 1 else state.wave
             val gameStatus = when {
                 newBaseHP <= 0 -> GameStatus.GameOver
@@ -578,7 +656,7 @@ class GameViewModel : ViewModel() {
             }
 
             state.copy(
-                enemies = newEnemies,
+                enemies = finalEnemies,
                 towers = towers,
                 baseHP = newBaseHP,
                 gold = newGold,
@@ -591,9 +669,11 @@ class GameViewModel : ViewModel() {
     }
 
     private fun updateTower(tower: Tower, enemies: List<Enemy>, path: List<Pair<Int, Int>>): Triple<Tower, Enemy?, Int> {
-        // Step 4: Targeting
-        val currentTime = System.currentTimeMillis() / 1000f
-        if (currentTime - tower.lastShotTime < 1f / tower.fireRate) {
+        val currentTime = LocalTime.now()
+        val currentTimeSeconds = currentTime.toSecondOfDay() + currentTime.nano / 1_000_000_000.0
+
+        if (currentTimeSeconds - tower.lastShotTime < 1f / (tower.fireRate+0.5f)) {
+            Log.d("KILL", "updateTower: tower at ${tower.position} cannot fire yet (time: $currentTimeSeconds, lastShot: ${tower.lastShotTime})")
             return Triple(tower, null, 0)
         }
 
@@ -602,14 +682,14 @@ class GameViewModel : ViewModel() {
                 kotlin.math.abs(e1.position.first - x) < 0.1f && kotlin.math.abs(e1.position.second - y) < 0.1f
             }.takeIf { it != -1 } ?: path.size
             val index2 = path.indexOfFirst { (x, y) ->
-                kotlin.math.abs(e2.position.first - x) < 0.1f && kotlin.math.abs(e2.position.second - y) < 0.1f
+                kotlin.math.abs(e2.position.first - x) < 0.5f && kotlin.math.abs(e2.position.second - y) < 0.5f
             }.takeIf { it != -1 } ?: path.size
             index2.compareTo(index1)
         }
 
         enemies.forEach { enemy ->
-            val distance = kotlin.math.abs(tower.position.first - enemy.position.first) +
-                    kotlin.math.abs(tower.position.second - enemy.position.second)
+            val distance = kotlin.math.abs(tower.position.first - enemy.position.first.toInt()) +
+                    kotlin.math.abs(tower.position.second - enemy.position.second.toInt())
             if (distance <= tower.range) {
                 pq.offer(enemy)
             }
@@ -617,8 +697,9 @@ class GameViewModel : ViewModel() {
 
         val target = pq.poll()
         if (target != null) {
+            Log.d("KILL", "Tower at ${tower.position} targeting enemy ${target.id} at ${target.position}, damage: ${tower.damage}")
             return Triple(
-                tower.copy(lastShotTime = currentTime),
+                tower.copy(lastShotTime = currentTimeSeconds),
                 target,
                 tower.damage
             )
@@ -627,31 +708,35 @@ class GameViewModel : ViewModel() {
     }
 
     private fun moveEnemy(enemy: Enemy, path: List<Pair<Int, Int>>): Triple<Float, Float, Boolean> {
-        // Step 3: Movement
         if (path.size < 2) {
             Log.e("GameViewModel", "Invalid path: $path")
             return Triple(enemy.position.first, enemy.position.second, true)
         }
 
         val currentPos = enemy.position
-        val currentIndex = path.indexOfFirst { (x, y) ->
-            kotlin.math.abs(currentPos.first - x) < 0.1f && kotlin.math.abs(currentPos.second - y) < 0.1f
-        }.takeIf { it != -1 } ?: path.indices.minByOrNull { i ->
+        val currentIndex = path.indices.minByOrNull { i ->
             val (x, y) = path[i]
-            (currentPos.first - x) * (currentPos.first - x) + (currentPos.second - y) * (currentPos.second - y)
+            val dx = currentPos.first - x
+            val dy = currentPos.second - y
+            dx * dx + dy * dy
         } ?: 0
 
+        Log.d("GameViewModel", "Enemy ${enemy.id} at $currentPos, path index: $currentIndex")
+
         if (currentIndex >= path.size - 1) {
-            Log.d("GameViewModel", "Enemy reached end of path at ${enemy.position}")
+            Log.d("GameViewModel", "Enemy ${enemy.id} reached end of path at ${enemy.position}")
             return Triple(currentPos.first, currentPos.second, false)
         }
 
         val nextPoint = path[currentIndex + 1]
         val (targetX, targetY) = nextPoint
-        val speed = enemy.speed * 0.1f // Adjusted for faster movement
-        val dx = targetX - currentPos.first
-        val dy = targetY - currentPos.second
-        val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+        Log.d("GameViewModel", "Enemy ${enemy.id} targeting next point: ($targetX, $targetY)")
+        val speed = enemy.speed * 0.1f
+        val dx = targetX.toFloat() - currentPos.first
+        val dy = targetY.toFloat() - currentPos.second
+        val distance = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        Log.d("GameViewModel", "Enemy ${enemy.id} distance to next point: $distance, dx: $dx, dy: $dy")
+
         if (distance < 0.01f) {
             return Triple(targetX.toFloat(), targetY.toFloat(), true)
         }
@@ -661,26 +746,25 @@ class GameViewModel : ViewModel() {
             val t = speed / distance
             val newX = currentPos.first + dx * t
             val newY = currentPos.second + dy * t
+            Log.d("GameViewModel", "Enemy ${enemy.id} moving to ($newX, $newY)")
             return Triple(newX, newY, true)
         }
     }
 
     private fun initializeGame() {
-        // Step 1: Initialize
-        val grid = Array(10) { Array(10) { Tile() } }
-        val path = computePathBFS(grid)
-        Log.d("GameViewModel", "Initialized path: $path")
+        val grid = Array(10) { Array(10) { Tile(isObstacle = false) } }
+
         _gameState.value = GameState(
             grid = grid,
-            path = path,
-            gold = 100,
+            gold = 150,
             baseHP = 10,
-            wave = 1
+            wave = 1,
+            isInPreparationPhase = true,
+            showInvalidPathMessage = false
         )
     }
 
     private fun computePathBFS(grid: Array<Array<Tile>>): List<Pair<Int, Int>> {
-        // Step 1: BFS
         val start = Pair(0, 0)
         val end = Pair(9, 9)
         val queue: Queue<Pair<Int, Int>> = LinkedList()
@@ -688,6 +772,11 @@ class GameViewModel : ViewModel() {
         val parent = mutableMapOf<Pair<Int, Int>, Pair<Int, Int>>()
         queue.add(start)
         visited.add(start)
+
+        if (grid[0][0].isObstacle || grid[9][9].isObstacle) {
+            Log.e("GameViewModel", "Start or end is blocked, using fallback path")
+            return generateFallbackPath()
+        }
 
         val directions = listOf(
             Pair(0, 1), Pair(1, 0), Pair(0, -1), Pair(-1, 0)
@@ -717,11 +806,11 @@ class GameViewModel : ViewModel() {
             Log.e("GameViewModel", "BFS failed, using fallback path")
             return generateFallbackPath()
         }
+        Log.d("GameViewModel", "Computed path: $finalPath")
         return finalPath
     }
 
     private fun generateFallbackPath(): List<Pair<Int, Int>> {
-        // Fallback: Simple diagonal path from (0,0) to (9,9)
         val path = mutableListOf<Pair<Int, Int>>()
         for (i in 0..9) {
             path.add(Pair(i, i))
@@ -731,17 +820,17 @@ class GameViewModel : ViewModel() {
     }
 
     private fun createSkillTree(): SkillTree {
-        // Step 5: Skills tree
         val upgrade1 = Upgrade(name = "Damage +5", cost = 20, dependencies = emptyList())
         val upgrade2 = Upgrade(name = "Damage +10", cost = 30, dependencies = listOf(upgrade1))
         return SkillTree(upgrades = listOf(upgrade1, upgrade2))
     }
 }
 
+
 data class GameState(
     val grid: Array<Array<Tile>> = Array(10) { Array(10) { Tile() } },
     val path: List<Pair<Int, Int>> = emptyList(),
-    val gold: Int = 100,
+    val gold: Int = 150,
     val baseHP: Int = 10,
     val wave: Int = 1,
     val towers: List<Tower> = emptyList(),
@@ -749,7 +838,9 @@ data class GameState(
     val isWaveActive: Boolean = false,
     val attackLines: List<AttackLine> = emptyList(), // Step 4
     val showWaveTransition: Boolean = false, // Step 6
-    val gameStatus: GameStatus = GameStatus.Playing // Step 6
+    val gameStatus: GameStatus = GameStatus.Playing, // Step 6
+    val isInPreparationPhase: Boolean = true, // New flag for preparation phase
+    val showInvalidPathMessage: Boolean = false // New flag for invalid path feedback
 )
 
 data class Tile(val isObstacle: Boolean = false)
@@ -759,11 +850,12 @@ data class Tower(
     val range: Float = 2f,
     val damage: Int = 10,
     val fireRate: Float = 1f,
-    val lastShotTime: Float = 0f, // Step 4
+    val lastShotTime: Double = 0.0, // Step 4
     val skillTree: SkillTree = SkillTree() // Step 5
 )
 
 data class Enemy(
+    val id:Int,
     val hp: Int,
     val speed: Float,
     val position: Pair<Float, Float>
