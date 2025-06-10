@@ -59,6 +59,10 @@ import java.time.LocalTime
 import java.util.LinkedList
 import java.util.PriorityQueue
 import java.util.Queue
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -169,7 +173,8 @@ fun TowerDefenseGame(viewModel: GameViewModel = viewModel()) {
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f)
+                        .aspectRatio(1f),
+                    enemyAttackLines = gameState.enemyAttackLines
                 )
 
                 // Step 3: Start Wave button
@@ -250,6 +255,7 @@ fun GameGrid(
     enemies: List<Enemy>,
     pathAnimationProgress: Float,
     attackLines: List<AttackLine>,
+    enemyAttackLines: List<EnemyAttackLine>,
     wave: Int,
     onTileClick: (Int, Int) -> Unit,
     modifier: Modifier
@@ -258,7 +264,9 @@ fun GameGrid(
         .clickable(enabled = true, onClick = {})
         .pointerInput(Unit) {
             detectTapGestures { offset ->
-                val tileSize = size.width / 10
+                val tileWidth = size.width / 10
+                val tileHeight = size.height / 10
+                val tileSize= max(tileWidth, tileHeight)
                 val col = (offset.x / tileSize).toInt()
                 val row = (offset.y / tileSize).toInt()
                 if (row in 0..9 && col in 0..9) {
@@ -267,20 +275,19 @@ fun GameGrid(
             }
         }
     ) {
-        val tileSize = size.width / 10
-        // Step 1: Draw grid
+        val tileWidth = size.width / 10
+        val tileHeight = size.height / 10
+        val tileSize= max(tileWidth, tileHeight)
+        // Draw grid
         for (row in 0 until 10) {
             for (col in 0 until 10) {
-
                 val isPath = path.indexOf(Pair(row, col)) != -1 &&
                         path.indexOf(Pair(row, col)) <= (path.size * pathAnimationProgress).toInt()
-
                 val tower = towers.find { it.position == Pair(row, col) }
                 val hasTower = tower != null
                 drawRect(
                     color = when {
-
-                        hasTower && tower!!.skillTree.isFullyUpgraded -> Color(0xFFFF9800) // Step 5
+                        hasTower && tower!!.skillTree.isFullyUpgraded -> Color(0xFFFF9800)
                         hasTower -> Color(0xFFFF5722)
                         else -> Color(0xFF616161)
                     },
@@ -293,27 +300,38 @@ fun GameGrid(
                     size = Size(tileSize, tileSize),
                     style = Stroke(width = 2f)
                 )
+                // Draw tower HP bar
+                if (hasTower) {
+                    val hpRatio = tower!!.hp.toFloat() / tower.maxHp
+                    drawRect(
+                        color = Color.Green,
+                        topLeft = Offset(col * tileSize + tileSize / 4, row * tileSize + tileSize / 8 - 10),
+                        size = Size(tileSize / 2 * hpRatio, 5f)
+                    )
+                    drawRect(
+                        color = Color.Black,
+                        topLeft = Offset(col * tileSize + tileSize / 4, row * tileSize + tileSize / 8 - 10),
+                        size = Size(tileSize / 2, 5f),
+                        style = Stroke(width = 1f)
+                    )
+                }
             }
         }
 
-        // Step 3: Draw enemies
-        // Step 4: HP bars
-        // Step 6: Scaled HP
+        // Draw enemies
         Log.d("GameGrid", "Rendering ${enemies.size} enemies")
         enemies.forEachIndexed { index, enemy ->
             val (x, y) = enemy.position
-//            Log.d("GameGrid", "Drawing enemy ${enemy.id} at ($x, $y)")
             drawCircle(
-                color = Color.Red,
-                radius = tileSize / 4,
+                color = if (enemy.type == EnemyType.TowerEnemy) Color.Blue else Color.Red,
+                radius = tileWidth / 4,
                 center = Offset(y * tileSize + tileSize / 2, x * tileSize + tileSize / 2)
             )
-            val xc=x * tileSize + tileSize / 2
-            val yc=y * tileSize + tileSize / 2
+            // Draw enemy HP bar
             val hpRatio = enemy.hp.toFloat() / (50 + (wave - 1) * 10)
             drawRect(
                 color = Color.Green,
-                topLeft = Offset(y * tileSize + tileSize / 4,x * tileSize + tileSize / 8 - 10),
+                topLeft = Offset(y * tileSize + tileSize / 4, x * tileSize + tileSize / 8 - 10),
                 size = Size(tileSize / 2 * hpRatio, 5f)
             )
             drawRect(
@@ -324,7 +342,7 @@ fun GameGrid(
             )
         }
 
-        // Step 4: Attack lines
+        // Draw tower attack lines (yellow)
         for (line in attackLines) {
             drawLine(
                 color = Color.Yellow,
@@ -336,7 +354,24 @@ fun GameGrid(
                     (line.enemyPos.second + 0.5f) * tileSize,
                     (line.enemyPos.first + 0.5f) * tileSize
                 ),
-                strokeWidth = 4f,
+                strokeWidth = 2f,
+                alpha = line.alpha
+            )
+        }
+
+        // Draw enemy attack lines (blue)
+        for (line in enemyAttackLines) {
+            drawLine(
+                color = Color.Blue,
+                start = Offset(
+                    (line.enemyPos.second + 0.5f) * tileSize,
+                    (line.enemyPos.first + 0.5f) * tileSize
+                ),
+                end = Offset(
+                    (line.towerPos.second + 0.5f) * tileSize,
+                    (line.towerPos.first + 0.5f) * tileSize
+                ),
+                strokeWidth = 2f,
                 alpha = line.alpha
             )
         }
@@ -492,16 +527,19 @@ class GameViewModel : ViewModel() {
             val baseHP = 50 + (wave - 1) * 10
             val baseSpeed = 1f + (wave - 1) * 0.1f
             val waveEnemies = listOf(
-                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f)),
-                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f)),
-                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f))
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f), type = EnemyType.BaseEnemy),
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed + 0.2f, position = Pair(0f, 9f), type = EnemyType.TowerEnemy),
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f), type = EnemyType.BaseEnemy),
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed, position = Pair(0f, 0f), type = EnemyType.BaseEnemy),
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed + 0.2f, position = Pair(5f, 9f), type = EnemyType.TowerEnemy),
+                Enemy(id = enemyIdCounter++, hp = baseHP, speed = baseSpeed + 0.2f, position = Pair(5f, 0f), type = EnemyType.TowerEnemy),
             )
             waveEnemies.forEachIndexed { index, enemy ->
-                Log.d("GameViewModel", "Spawning enemy ${index + 1} at position ${enemy.position}")
+                Log.d("GameViewModel", "Spawning enemy ${index + 1} (${enemy.type}) at position ${enemy.position}")
                 _gameState.update { state ->
                     state.copy(enemies = state.enemies + enemy)
                 }
-                delay(2000)
+                delay(500)
             }
             Log.d("GameViewModel", "Finished spawning ${waveEnemies.size} enemies")
 
@@ -516,22 +554,20 @@ class GameViewModel : ViewModel() {
     fun placeTower(row: Int, col: Int) {
         Log.d("TOWER_POSITION", "placeTower: $row, $col")
         val currentState = _gameState.value
-        if (currentState.gold >= 50 && !currentState.path.contains(Pair(row, col)) &&
+        if (row in 0..9 && col in 0..9 && currentState.gold >= 50 && !currentState.path.contains(Pair(row, col)) &&
             !currentState.towers.any { it.position == Pair(row, col) } && currentState.isInPreparationPhase) {
             val newGrid = currentState.grid.map { it.copyOf() }.toTypedArray()
             newGrid[row][col] = Tile(isObstacle = true)
 
+            val newTower = Tower(position = Pair(row, col), skillTree = createSkillTree())
             _gameState.update { state ->
                 state.copy(
                     gold = state.gold - 50,
                     grid = newGrid,
-                    towers = state.towers + Tower(
-                        position = Pair(row, col),
-                        skillTree = createSkillTree()
-                    )
+                    towers = state.towers + newTower
                 )
             }
-            Log.d("GameViewModel", "Tower placed at ($row, $col), grid updated, path unchanged")
+            Log.d("GameViewModel", "Tower placed at ($row, $col) with lastShotTime: ${newTower.lastShotTime}, hp: ${newTower.hp}, grid updated, path unchanged")
         } else {
             Log.d("GameViewModel", "Cannot place tower at ($row, $col): Invalid placement")
         }
@@ -573,10 +609,12 @@ class GameViewModel : ViewModel() {
 
     private suspend fun updateGame() {
         _gameState.update { state ->
+            val curr= LocalTime.now();
+            val currentTime = curr.toSecondOfDay()+curr.nano/ 1_000_000_000.0
             // Move enemies
             val updatedEnemies = state.enemies.mapNotNull { enemy ->
-                val (newX, newY, isAlive) = moveEnemy(enemy, state.path)
-                Log.d("GameViewModel", "Moving enemy${enemy.id} from ${enemy.position} to ($newX, $newY), isAlive: $isAlive")
+                val (newX, newY, isAlive) = moveEnemy(enemy, state.path, state.towers)
+                Log.d("GameViewModel", "Moving enemy ${enemy.id} (${enemy.type}) from ${enemy.position} to ($newX, $newY), isAlive: $isAlive")
                 if (isAlive) {
                     enemy.copy(position = Pair(newX, newY))
                 } else {
@@ -591,22 +629,23 @@ class GameViewModel : ViewModel() {
             }
 
             val newEnemies = updatedEnemies.toList()
+            Log.d("GameViewModel", "Processing towers with ${newEnemies.size} enemies")
             val attackLines = mutableListOf<AttackLine>()
+            val enemyAttackLines = mutableListOf<EnemyAttackLine>()
 
-            // Process towers asynchronously
-            val towerResults = coroutineScope {
+            // Process tower attacks asynchronously
+            val towerAttackResults = coroutineScope {
                 state.towers.map { tower ->
                     async {
-                        Log.d("KILL_A", "updateGame: ${tower.position},${newEnemies}")
-                        updateTower(tower, newEnemies, state.path)
+                        updateTower(tower, newEnemies, state.path, currentTime)
                     }
                 }.map { it.await() }
             }
 
-            // Aggregate damage per enemy
+            // Aggregate tower attack damage
             val damageMap = mutableMapOf<Int, Int>() // enemy.id -> total damage
             val attackingTowers = mutableMapOf<Int, List<Pair<Pair<Int, Int>, Int>>>() // enemy.id -> List<(tower.position, damage)>
-            towerResults.forEach { (updatedTower, targetEnemy, damageDealt) ->
+            towerAttackResults.forEach { (updatedTower, targetEnemy, damageDealt) ->
                 if (damageDealt > 0 && targetEnemy != null) {
                     damageMap[targetEnemy.id] = (damageMap[targetEnemy.id] ?: 0) + damageDealt
                     attackingTowers[targetEnemy.id] = (attackingTowers[targetEnemy.id] ?: emptyList()) + Pair(updatedTower.position, damageDealt)
@@ -620,19 +659,22 @@ class GameViewModel : ViewModel() {
                 }
             }
 
-            // Log simultaneous attacks
+            // Log tower attacks
             damageMap.forEach { (enemyId, totalDamage) ->
                 val towers = attackingTowers[enemyId]?.joinToString { "Tower at ${it.first} (damage: ${it.second})" } ?: "None"
                 Log.d("GameViewModel", "Enemy $enemyId takes $totalDamage damage from: $towers")
             }
 
-            // Apply aggregated damage to enemies
+            // Process tower damage from TowerEnemies
+            val towerDamageResults = updateTowers(state.towers, newEnemies, currentTime, enemyAttackLines)
+
+            // Apply tower attack damage to enemies
             val finalEnemies = newEnemies.mapNotNull { enemy ->
                 val totalDamage = damageMap[enemy.id] ?: 0
                 if (totalDamage > 0) {
                     val newHP = enemy.hp - totalDamage
                     if (newHP <= 0) {
-                        Log.d("GameViewModel", "Enemy ${enemy.id} killed at ${enemy.position}")
+                        Log.d("GameViewModel", "Enemy ${enemy.id} (${enemy.type}) killed at ${enemy.position}")
                         null
                     } else {
                         enemy.copy(hp = newHP)
@@ -642,8 +684,11 @@ class GameViewModel : ViewModel() {
                 }
             }
 
-            // Collect updated towers
-            val towers = towerResults.map { it.first }
+            // Collect updated towers (combine attack and damage results)
+            val updatedTowersFromAttacks = towerAttackResults.map { it.first }
+            val finalTowers = towerDamageResults.first.map { tower ->
+                updatedTowersFromAttacks.find { it.position == tower.position }?.copy(hp = tower.hp) ?: tower
+            }
 
             val kills = state.enemies.size - finalEnemies.size - (state.baseHP - newBaseHP)
             val newGold = state.gold + kills * 10
@@ -657,63 +702,149 @@ class GameViewModel : ViewModel() {
 
             state.copy(
                 enemies = finalEnemies,
-                towers = towers,
+                towers = finalTowers,
                 baseHP = newBaseHP,
                 gold = newGold,
                 isWaveActive = isWaveActive,
                 wave = newWave,
                 attackLines = attackLines,
+                enemyAttackLines = enemyAttackLines,
                 gameStatus = gameStatus
             )
         }
     }
 
-    private fun updateTower(tower: Tower, enemies: List<Enemy>, path: List<Pair<Int, Int>>): Triple<Tower, Enemy?, Int> {
-        val currentTime = LocalTime.now()
-        val currentTimeSeconds = currentTime.toSecondOfDay() + currentTime.nano / 1_000_000_000.0
-
-        if (currentTimeSeconds - tower.lastShotTime < 1f / (tower.fireRate+0.5f)) {
-            Log.d("KILL", "updateTower: tower at ${tower.position} cannot fire yet (time: $currentTimeSeconds, lastShot: ${tower.lastShotTime})")
+    private fun updateTower(tower: Tower, enemies: List<Enemy>, path: List<Pair<Int, Int>>, currentTime: Double): Triple<Tower, Enemy?, Int> {
+        Log.d("E_KILL", "updateTower: tower at ${tower.position}, time: $currentTime, lastShot: ${tower.lastShotTime}, fireRate: ${tower.fireRate}")
+        if (currentTime - tower.lastShotTime < 0.5f) {
+            Log.d("E_KILL", "updateTower: tower at ${tower.position} cannot fire yet")
             return Triple(tower, null, 0)
         }
 
         val pq = PriorityQueue<Enemy> { e1, e2 ->
             val index1 = path.indexOfFirst { (x, y) ->
-                kotlin.math.abs(e1.position.first - x) < 0.1f && kotlin.math.abs(e1.position.second - y) < 0.1f
+                abs(e1.position.first - x) < 0.5f && abs(e1.position.second - y) < 0.5f
             }.takeIf { it != -1 } ?: path.size
             val index2 = path.indexOfFirst { (x, y) ->
-                kotlin.math.abs(e2.position.first - x) < 0.5f && kotlin.math.abs(e2.position.second - y) < 0.5f
+                abs(e2.position.first - x) < 0.5f && abs(e2.position.second - y) < 0.5f
             }.takeIf { it != -1 } ?: path.size
+            Log.d("KILL", "Comparing enemies ${e1.id} (index $index1) and ${e2.id} (index $index2) for tower ${tower.position}")
             index2.compareTo(index1)
         }
 
         enemies.forEach { enemy ->
-            val distance = kotlin.math.abs(tower.position.first - enemy.position.first.toInt()) +
-                    kotlin.math.abs(tower.position.second - enemy.position.second.toInt())
+            val distance = abs(tower.position.first - enemy.position.first) +
+                    abs(tower.position.second - enemy.position.second)
+            Log.d("KILL", "Checking enemy ${enemy.id} (${enemy.type}) at ${enemy.position}, distance from tower ${tower.position}: $distance")
             if (distance <= tower.range) {
                 pq.offer(enemy)
+                Log.d("KILL", "Enemy ${enemy.id} added to PQ for tower ${tower.position}")
             }
         }
 
+        Log.d("KILL", "Tower at ${tower.position} has ${pq.size} enemies in PQ")
         val target = pq.poll()
         if (target != null) {
-            Log.d("KILL", "Tower at ${tower.position} targeting enemy ${target.id} at ${target.position}, damage: ${tower.damage}")
+            Log.d("CHECK_TIME", "Tower at ${tower.position} targeting enemy ${target.id} (${target.type}) at $currentTime, lastShot: ${tower.lastShotTime}")
             return Triple(
-                tower.copy(lastShotTime = currentTimeSeconds),
+                tower.copy(lastShotTime = currentTime),
                 target,
                 tower.damage
             )
         }
+        Log.d("KILL", "Tower at ${tower.position} found no valid target")
         return Triple(tower, null, 0)
     }
 
-    private fun moveEnemy(enemy: Enemy, path: List<Pair<Int, Int>>): Triple<Float, Float, Boolean> {
+    private fun updateTowers(towers: List<Tower>, enemies: List<Enemy>, currentTime: Double, enemyAttackLines: MutableList<EnemyAttackLine>): Pair<List<Tower>, List<Enemy>> {
+        val towerDamageMap = mutableMapOf<Pair<Int, Int>, Int>() // tower.position -> total damage
+        val updatedEnemies = enemies.toMutableList()
+
+        enemies.forEachIndexed { index, enemy ->
+            if (enemy.type == EnemyType.TowerEnemy) {
+                if (currentTime - enemy.lastShotTime < 1f) {
+                    Log.d("GameViewModel", "Enemy ${enemy.id} (TowerEnemy) cannot attack yet, lastShot: ${enemy.lastShotTime}")
+                    return@forEachIndexed
+                }
+                val towerPos = towers.minByOrNull {
+                    abs(it.position.first - enemy.position.first) +
+                            abs(it.position.second - enemy.position.second)
+                }?.position
+                if (towerPos != null) {
+                    val distance = abs(towerPos.first - enemy.position.first) +
+                            abs(towerPos.second - enemy.position.second)
+                    if (distance <= enemy.enemyRange) { // Enemy is in range of tower
+                        towerDamageMap[towerPos] = (towerDamageMap[towerPos] ?: 0) + enemy.towerDamage
+                        updatedEnemies[index] = enemy.copy(lastShotTime = currentTime)
+                        enemyAttackLines.add(
+                            EnemyAttackLine(
+                                enemyPos = enemy.position,
+                                towerPos = towerPos,
+                                alpha = 1f
+                            )
+                        )
+                        Log.d("GameViewModel", "Enemy ${enemy.id} (TowerEnemy) dealing ${enemy.towerDamage} damage to tower at $towerPos at time $currentTime")
+                    }
+                }
+            }
+        }
+
+        val updatedTowers = towers.mapNotNull { tower ->
+            val damageTaken = towerDamageMap[tower.position] ?: 0
+            if (damageTaken > 0) {
+                val newHP = tower.hp - damageTaken
+                if (newHP <= 0) {
+                    Log.d("GameViewModel", "Tower at ${tower.position} destroyed")
+                    null
+                } else {
+                    tower.copy(hp = newHP)
+                }
+            } else {
+                tower
+            }
+        }
+
+        return Pair(updatedTowers, updatedEnemies)
+    }
+
+    private fun moveEnemy(enemy: Enemy, path: List<Pair<Int, Int>>, towers: List<Tower>): Triple<Float, Float, Boolean> {
         if (path.size < 2) {
             Log.e("GameViewModel", "Invalid path: $path")
             return Triple(enemy.position.first, enemy.position.second, true)
         }
 
         val currentPos = enemy.position
+        val speed = enemy.speed * 0.1f
+
+        if (enemy.type == EnemyType.TowerEnemy && towers.isNotEmpty()) {
+            // Find nearest tower
+            val targetTower = towers.minByOrNull {
+                abs(it.position.first - currentPos.first) +
+                        abs(it.position.second - currentPos.second)
+            }
+            if (targetTower != null) {
+                val (targetX, targetY) = targetTower.position
+                Log.d("GameViewModel", "Enemy ${enemy.id} (TowerEnemy) targeting tower at ($targetX, $targetY)")
+                val dx = targetX.toFloat() - currentPos.first
+                val dy = targetY.toFloat() - currentPos.second
+                val distance = sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+
+                if (distance < 0.01f) {
+                    return Triple(targetX.toFloat(), targetY.toFloat(), true)
+                }
+                if (distance <= speed) {
+                    return Triple(targetX.toFloat(), targetY.toFloat(), true)
+                } else {
+                    val t = speed / distance
+                    val newX = currentPos.first + dx * t
+                    val newY = currentPos.second + dy * t
+                    Log.d("GameViewModel", "Enemy ${enemy.id} (TowerEnemy) moving to ($newX, $newY)")
+                    return Triple(newX, newY, true)
+                }
+            }
+        }
+
+        // BaseEnemy or TowerEnemy with no towers left
         val currentIndex = path.indices.minByOrNull { i ->
             val (x, y) = path[i]
             val dx = currentPos.first - x
@@ -721,21 +852,19 @@ class GameViewModel : ViewModel() {
             dx * dx + dy * dy
         } ?: 0
 
-        Log.d("GameViewModel", "Enemy ${enemy.id} at $currentPos, path index: $currentIndex")
+        Log.d("GameViewModel", "Enemy ${enemy.id} (${enemy.type}) at $currentPos, path index: $currentIndex")
 
         if (currentIndex >= path.size - 1) {
-            Log.d("GameViewModel", "Enemy ${enemy.id} reached end of path at ${enemy.position}")
+            Log.d("GameViewModel", "Enemy ${enemy.id} (${enemy.type}) reached end of path at ${enemy.position}")
             return Triple(currentPos.first, currentPos.second, false)
         }
 
         val nextPoint = path[currentIndex + 1]
         val (targetX, targetY) = nextPoint
-        Log.d("GameViewModel", "Enemy ${enemy.id} targeting next point: ($targetX, $targetY)")
-        val speed = enemy.speed * 0.1f
+        Log.d("GameViewModel", "Enemy ${enemy.id} (${enemy.type}) targeting next point: ($targetX, $targetY)")
         val dx = targetX.toFloat() - currentPos.first
         val dy = targetY.toFloat() - currentPos.second
-        val distance = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-        Log.d("GameViewModel", "Enemy ${enemy.id} distance to next point: $distance, dx: $dx, dy: $dy")
+        val distance = sqrt((dx * dx + dy * dy).toDouble()).toFloat()
 
         if (distance < 0.01f) {
             return Triple(targetX.toFloat(), targetY.toFloat(), true)
@@ -746,7 +875,7 @@ class GameViewModel : ViewModel() {
             val t = speed / distance
             val newX = currentPos.first + dx * t
             val newY = currentPos.second + dy * t
-            Log.d("GameViewModel", "Enemy ${enemy.id} moving to ($newX, $newY)")
+            Log.d("GameViewModel", "Enemy ${enemy.id} (${enemy.type}) moving to ($newX, $newY)")
             return Triple(newX, newY, true)
         }
     }
@@ -756,7 +885,7 @@ class GameViewModel : ViewModel() {
 
         _gameState.value = GameState(
             grid = grid,
-            gold = 150,
+            gold = 300,
             baseHP = 10,
             wave = 1,
             isInPreparationPhase = true,
@@ -830,17 +959,18 @@ class GameViewModel : ViewModel() {
 data class GameState(
     val grid: Array<Array<Tile>> = Array(10) { Array(10) { Tile() } },
     val path: List<Pair<Int, Int>> = emptyList(),
-    val gold: Int = 150,
+    val gold: Int = 300,
     val baseHP: Int = 10,
     val wave: Int = 1,
     val towers: List<Tower> = emptyList(),
     val enemies: List<Enemy> = emptyList(),
     val isWaveActive: Boolean = false,
-    val attackLines: List<AttackLine> = emptyList(), // Step 4
-    val showWaveTransition: Boolean = false, // Step 6
-    val gameStatus: GameStatus = GameStatus.Playing, // Step 6
-    val isInPreparationPhase: Boolean = true, // New flag for preparation phase
-    val showInvalidPathMessage: Boolean = false // New flag for invalid path feedback
+    val attackLines: List<AttackLine> = emptyList(),
+    val enemyAttackLines: List<EnemyAttackLine> = emptyList(), // New: TowerEnemy attack lines
+    val showWaveTransition: Boolean = false,
+    val gameStatus: GameStatus = GameStatus.Playing,
+    val isInPreparationPhase: Boolean = true,
+    val showInvalidPathMessage: Boolean = false
 )
 
 data class Tile(val isObstacle: Boolean = false)
@@ -850,21 +980,33 @@ data class Tower(
     val range: Float = 2f,
     val damage: Int = 10,
     val fireRate: Float = 1f,
-    val lastShotTime: Double = 0.0, // Step 4
-    val skillTree: SkillTree = SkillTree() // Step 5
+    val lastShotTime: Double = 0.0,
+    val skillTree: SkillTree = SkillTree(),
+    val hp: Int = 50,
+    val maxHp: Int = 50
 )
 
 data class Enemy(
-    val id:Int,
+    val id: Int,
     val hp: Int,
     val speed: Float,
-    val position: Pair<Float, Float>
+    val position: Pair<Float, Float>,
+    val type: EnemyType = EnemyType.BaseEnemy,
+    val towerDamage: Int = if (type == EnemyType.TowerEnemy) 5 else 0,
+    val enemyRange: Float = if (type == EnemyType.TowerEnemy) 1f else 0f,
+    val lastShotTime: Double = 0.0
 )
 
 data class AttackLine(
     val towerPos: Pair<Int, Int>,
     val enemyPos: Pair<Float, Float>,
-    val alpha: Float // Step 4
+    val alpha: Float
+)
+
+data class EnemyAttackLine( // New: For TowerEnemy attacking towers
+    val enemyPos: Pair<Float, Float>,
+    val towerPos: Pair<Int, Int>,
+    val alpha: Float
 )
 
 data class Upgrade(
@@ -877,7 +1019,6 @@ data class SkillTree(
     val upgrades: List<Upgrade> = emptyList(),
     val unlockedUpgrades: List<Upgrade> = emptyList()
 ) {
-    // Step 5: Skill tree logic
     val isFullyUpgraded: Boolean
         get() = upgrades.all { isUpgradeUnlocked(it) }
 
@@ -887,5 +1028,10 @@ data class SkillTree(
 }
 
 enum class GameStatus {
-    Playing, Victory, GameOver // Step 6
+    Playing, Victory, GameOver
+}
+
+enum class EnemyType {
+    BaseEnemy,
+    TowerEnemy
 }
