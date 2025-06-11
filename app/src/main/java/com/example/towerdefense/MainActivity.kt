@@ -264,23 +264,23 @@ fun GameGrid(
         .clickable(enabled = true, onClick = {})
         .pointerInput(Unit) {
             detectTapGestures { offset ->
-                val tileWidth = size.width / 10
-                val tileHeight = size.height / 10
+                val tileWidth = size.width / 15
+                val tileHeight = size.height / 15
                 val tileSize= max(tileWidth, tileHeight)
                 val col = (offset.x / tileSize).toInt()
                 val row = (offset.y / tileSize).toInt()
-                if (row in 0..9 && col in 0..9) {
+                if (row in 0..14 && col in 0..14) {
                     onTileClick(row, col)
                 }
             }
         }
     ) {
-        val tileWidth = size.width / 10
-        val tileHeight = size.height / 10
+        val tileWidth = size.width / 15
+        val tileHeight = size.height / 15
         val tileSize= max(tileWidth, tileHeight)
         // Draw grid
-        for (row in 0 until 10) {
-            for (col in 0 until 10) {
+        for (row in 0 until 15) {
+            for (col in 0 until 15) {
                 val isPath = path.indexOf(Pair(row, col)) != -1 &&
                         path.indexOf(Pair(row, col)) <= (path.size * pathAnimationProgress).toInt()
                 val tower = towers.find { it.position == Pair(row, col) }
@@ -324,7 +324,7 @@ fun GameGrid(
             val (x, y) = enemy.position
             drawCircle(
                 color = if (enemy.type == EnemyType.TowerEnemy) Color.Blue else Color.Red,
-                radius = tileWidth / 4,
+                radius = tileSize / 4,
                 center = Offset(y * tileSize + tileSize / 2, x * tileSize + tileSize / 2)
             )
             // Draw enemy HP bar
@@ -506,7 +506,8 @@ class GameViewModel : ViewModel() {
         val currentState = _gameState.value
 
         val newPath = computePathBFS(currentState.grid)
-        if (newPath.firstOrNull() != Pair(0, 0) || newPath.lastOrNull() != Pair(9, 9)) {
+        if (newPath.firstOrNull() != Pair(0, 0) || newPath.lastOrNull() != Pair(14
+                , 14)) {
             _gameState.update { it.copy(showInvalidPathMessage = true) }
             Log.e("GameViewModel", "Cannot start wave: No valid path from (0,0) to (9,9)")
             return
@@ -554,7 +555,7 @@ class GameViewModel : ViewModel() {
     fun placeTower(row: Int, col: Int) {
         Log.d("TOWER_POSITION", "placeTower: $row, $col")
         val currentState = _gameState.value
-        if (row in 0..9 && col in 0..9 && currentState.gold >= 50 && !currentState.path.contains(Pair(row, col)) &&
+        if (row in 0..14 && col in 0..14 && currentState.gold >= 50 && !currentState.path.contains(Pair(row, col)) &&
             !currentState.towers.any { it.position == Pair(row, col) } && currentState.isInPreparationPhase) {
             val newGrid = currentState.grid.map { it.copyOf() }.toTypedArray()
             newGrid[row][col] = Tile(isObstacle = true)
@@ -881,7 +882,7 @@ class GameViewModel : ViewModel() {
     }
 
     private fun initializeGame() {
-        val grid = Array(10) { Array(10) { Tile(isObstacle = false) } }
+        val grid = Array(15) { Array(15) { Tile(isObstacle = false) } }
 
         _gameState.value = GameState(
             grid = grid,
@@ -895,14 +896,14 @@ class GameViewModel : ViewModel() {
 
     private fun computePathBFS(grid: Array<Array<Tile>>): List<Pair<Int, Int>> {
         val start = Pair(0, 0)
-        val end = Pair(9, 9)
+        val end = Pair(14, 14)
         val queue: Queue<Pair<Int, Int>> = LinkedList()
         val visited = mutableSetOf<Pair<Int, Int>>()
         val parent = mutableMapOf<Pair<Int, Int>, Pair<Int, Int>>()
         queue.add(start)
         visited.add(start)
 
-        if (grid[0][0].isObstacle || grid[9][9].isObstacle) {
+        if (grid[0][0].isObstacle || grid[14][14].isObstacle) {
             Log.e("GameViewModel", "Start or end is blocked, using fallback path")
             return generateFallbackPath()
         }
@@ -916,7 +917,7 @@ class GameViewModel : ViewModel() {
             if (current == end) break
             for (dir in directions) {
                 val next = Pair(current.first + dir.first, current.second + dir.second)
-                if (next.first in 0..9 && next.second in 0..9 && !visited.contains(next) && !grid[next.first][next.second].isObstacle) {
+                if (next.first in 0..14 && next.second in 0..14 && !visited.contains(next) && !grid[next.first][next.second].isObstacle) {
                     queue.add(next)
                     visited.add(next)
                     parent[next] = current
@@ -941,8 +942,12 @@ class GameViewModel : ViewModel() {
 
     private fun generateFallbackPath(): List<Pair<Int, Int>> {
         val path = mutableListOf<Pair<Int, Int>>()
-        for (i in 0..9) {
-            path.add(Pair(i, i))
+        // Simple path: down to (16,0), then right to (16,9)
+        for (i in 0..14) {
+            path.add(Pair(i, 0))
+        }
+        for (j in 1..14) {
+            path.add(Pair(14, j))
         }
         Log.d("GameViewModel", "Generated fallback path: $path")
         return path
@@ -957,7 +962,7 @@ class GameViewModel : ViewModel() {
 
 
 data class GameState(
-    val grid: Array<Array<Tile>> = Array(10) { Array(10) { Tile() } },
+    val grid: Array<Array<Tile>> = Array(15) { Array(15) { Tile() } },
     val path: List<Pair<Int, Int>> = emptyList(),
     val gold: Int = 300,
     val baseHP: Int = 10,
